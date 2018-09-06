@@ -22,7 +22,6 @@ import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
-
 import org.apache.commons.lang3.StringUtils;
 import org.openapitools.codegen.CodegenModel;
 import org.openapitools.codegen.CodegenOperation;
@@ -38,14 +37,18 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+
 public class CppPistacheServerCodegen extends AbstractCppCodegen {
     protected String implFolder = "impl";
-    protected boolean isAddExternalLibs = false;
+    protected boolean isAddExternalLibs = true;
     public static final String OPTIONAL_EXTERNAL_LIB = "addExternalLibs";
     public static final String OPTIONAL_EXTERNAL_LIB_DESC = "Add the Possibility to fetch and compile external Libraries needed by this Framework.";
+    protected final String PREFIX = "";
+
     @Override
     public CodegenType getTag() {
         return CodegenType.SERVER;
@@ -63,6 +66,9 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
 
     public CppPistacheServerCodegen() {
         super();
+        if (StringUtils.isEmpty(modelNamePrefix)) {
+            modelNamePrefix = PREFIX;
+        }
 
         apiPackage = "org.openapitools.server.api";
         modelPackage = "org.openapitools.server.model";
@@ -83,8 +89,8 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
 
         reservedWords = new HashSet<>();
 
-        supportingFiles.add(new SupportingFile("modelbase-header.mustache", "model", "ModelBase.h"));
-        supportingFiles.add(new SupportingFile("modelbase-source.mustache", "model", "ModelBase.cpp"));
+        supportingFiles.add(new SupportingFile("modelbase-header.mustache", "model", modelNamePrefix + "ModelBase.h"));
+        supportingFiles.add(new SupportingFile("modelbase-source.mustache", "model", modelNamePrefix + "ModelBase.cpp"));
         supportingFiles.add(new SupportingFile("cmake.mustache", "", "CMakeLists.txt"));
         supportingFiles.add(new SupportingFile("README.mustache", "", "README.md"));
 
@@ -117,7 +123,14 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
     @Override
     public void processOpts() {
         super.processOpts();
-
+        if (additionalProperties.containsKey("modelNamePrefix")) {
+            additionalProperties().put("prefix", modelNamePrefix);
+            supportingFiles.clear();
+            supportingFiles.add(new SupportingFile("modelbase-header.mustache", "model", modelNamePrefix + "ModelBase.h"));
+            supportingFiles.add(new SupportingFile("modelbase-source.mustache", "model", modelNamePrefix + "ModelBase.cpp"));
+            supportingFiles.add(new SupportingFile("cmake.mustache", "", "CMakeLists.txt"));
+            supportingFiles.add(new SupportingFile("README.mustache", "", "README.md"));
+        }
         additionalProperties.put("modelNamespaceDeclarations", modelPackage.split("\\."));
         additionalProperties.put("modelNamespace", modelPackage.replaceAll("\\.", "::"));
         additionalProperties.put("apiNamespaceDeclarations", apiPackage.split("\\."));
@@ -129,18 +142,6 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
         }
     }
 
-    /**
-     * Escapes a reserved word as defined in the `reservedWords` array. Handle
-     * escaping those terms here. This logic is only called if a variable
-     * matches the reserved words
-     *
-     * @return the escaped term
-     */
-    @Override
-    public String escapeReservedWord(String name) {
-        return "_" + name; // add an underscore to the name
-    }
-
     @Override
     public String toModelImport(String name) {
         if (importMapping.containsKey(name)) {
@@ -150,6 +151,7 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
         }
     }
 
+    
     @Override
     public CodegenModel fromModel(String name, Schema model, Map<String, Schema> allDefinitions) {
         CodegenModel codegenModel = super.fromModel(name, model, allDefinitions);
@@ -197,8 +199,8 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
     public Map<String, Object> postProcessOperationsWithModels(Map<String, Object> objs, List<Object> allModels) {
         Map<String, Object> operations = (Map<String, Object>) objs.get("operations");
         String classname = (String) operations.get("classname");
-        operations.put("classnameSnakeUpperCase", DefaultCodegen.underscore(classname).toUpperCase());
-        operations.put("classnameSnakeLowerCase", DefaultCodegen.underscore(classname).toLowerCase());
+        operations.put("classnameSnakeUpperCase", org.openapitools.codegen.utils.StringUtils.underscore(classname).toUpperCase(Locale.ROOT));
+        operations.put("classnameSnakeLowerCase", org.openapitools.codegen.utils.StringUtils.underscore(classname).toLowerCase(Locale.ROOT));
 
         List<CodegenOperation> operationList = (List<CodegenOperation>) operations.get("operation");
         for (CodegenOperation op : operationList) {
@@ -219,7 +221,7 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
                 }
             }
 
-            op.httpMethod = op.httpMethod.substring(0, 1).toUpperCase() + op.httpMethod.substring(1).toLowerCase();
+            op.httpMethod = op.httpMethod.substring(0, 1).toUpperCase(Locale.ROOT) + op.httpMethod.substring(1).toLowerCase(Locale.ROOT);
 
             for (CodegenParameter param : op.allParams) {
                 if (param.isFormParam) isParsingSupported = false;
@@ -245,6 +247,14 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
             }
             op.vendorExtensions.put("x-codegen-pistache-consumesJson", consumeJson);
             op.vendorExtensions.put("x-codegen-pistache-isParsingSupported", isParsingSupported);
+            
+            // Check if any one of the operations needs a model, then at API file level, at least one model has to be included.
+            for(String hdr : op.imports) {
+                if(importMapping.containsKey(hdr)) {
+                    continue;
+                }
+                operations.put("hasModelImport", true);
+            }
         }
 
         return objs;
@@ -252,7 +262,7 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
 
     @Override
     public String toModelFilename(String name) {
-        return initialCaps(name);
+        return initialCaps(toModelName(name));
     }
 
     @Override
@@ -277,7 +287,7 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
 
     @Override
     public String toApiFilename(String name) {
-        return initialCaps(name) + "Api";
+        return  modelNamePrefix + initialCaps(name) + "Api";
     }
 
     /**
@@ -298,7 +308,7 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
             return getSchemaType(p) + "<" + getTypeDeclaration(inner) + ">";
         }
         if (ModelUtils.isMapSchema(p)) {
-            Schema inner = (Schema) p.getAdditionalProperties();
+            Schema inner = ModelUtils.getAdditionalProperties(p);
             return getSchemaType(p) + "<std::string, " + getTypeDeclaration(inner) + ">";
         }
         else if (ModelUtils.isByteArraySchema(p)) {
@@ -334,9 +344,9 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
             return "0";
         } 
         else if (ModelUtils.isByteArraySchema(p)) {
-            return "";
+            return "\"\"";
         } else if (ModelUtils.isMapSchema(p)) {
-            String inner = getSchemaType((Schema) p.getAdditionalProperties());
+            String inner = getSchemaType(ModelUtils.getAdditionalProperties(p));
             return "std::map<std::string, " + inner + ">()";
         } else if (ModelUtils.isArraySchema(p)) {
             ArraySchema ap = (ArraySchema) p;
@@ -390,33 +400,6 @@ public class CppPistacheServerCodegen extends AbstractCppCodegen {
         } else
             type = openAPIType;
         return toModelName(type);
-    }
-
-    @Override
-    public String toModelName(String type) {
-        if (typeMapping.keySet().contains(type) || typeMapping.values().contains(type)
-                || importMapping.values().contains(type) || defaultIncludes.contains(type)
-                || languageSpecificPrimitives.contains(type)) {
-            return type;
-        } else {
-            return Character.toUpperCase(type.charAt(0)) + type.substring(1);
-        }
-    }
-
-    @Override
-    public String toApiName(String type) {
-        return Character.toUpperCase(type.charAt(0)) + type.substring(1) + "Api";
-    }
-
-    @Override
-    public String escapeQuotationMark(String input) {
-        // remove " to avoid code injection
-        return input.replace("\"", "");
-    }
-
-    @Override
-    public String escapeUnsafeCharacters(String input) {
-        return input.replace("*/", "*_/").replace("/*", "/_*");
     }
 
     @Override

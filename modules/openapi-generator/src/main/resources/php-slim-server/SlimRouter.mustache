@@ -10,7 +10,7 @@
  * @link     https://github.com/openapitools/openapi-generator
  */
 
-/**{{#apiInfo}}{{#appName}} 
+/**{{#apiInfo}}{{#appName}}
  * {{{appName}}}
  *
  {{/appName}}
@@ -39,6 +39,7 @@ use {{apiPackage}}\{{classname}};
 use Slim\App;
 use Psr\Container\ContainerInterface;
 use InvalidArgumentException;
+use Tuupola\Middleware\HttpBasicAuthentication;
 
 /**
  * SlimRouter Class Doc Comment
@@ -50,7 +51,8 @@ use InvalidArgumentException;
  * @author   OpenAPI Generator team
  * @link     https://github.com/openapitools/openapi-generator
  */
-class SlimRouter {
+class SlimRouter
+{
 
     /**
      * @var $slimApp Slim\App instance
@@ -63,13 +65,34 @@ class SlimRouter {
      * @param ContainerInterface|array $container Either a ContainerInterface or an associative array of app settings
      * @throws InvalidArgumentException when no container is provided that implements ContainerInterface
      */
-    public function __construct($container = []) {
+    public function __construct($container = [])
+    {
         $app = new App($container);
+
+        $basicAuth = new HttpBasicAuthentication([
+            "secure" => false,
+            "authenticator" => function ($arguments) {
+                $user = $arguments["user"];
+                $password = $arguments["password"];
+                return false;
+            }
+        ]);
 
         {{#apis}}
         {{#operations}}
         {{#operation}}
-        $app->{{httpMethod}}('{{{basePathWithoutHost}}}{{{path}}}', {{classname}}::class . ':{{operationId}}');
+        $app->{{httpMethod}}(
+            '{{{basePathWithoutHost}}}{{{path}}}',
+            {{classname}}::class . ':{{operationId}}'
+{{#hasAuthMethods}}
+{{#authMethods}}
+{{#isBasic}}
+        )->add(
+            $basicAuth
+{{/isBasic}}
+{{/authMethods}}
+{{/hasAuthMethods}}
+        );
         {{/operation}}
         {{/operations}}
         {{/apis}}
@@ -81,7 +104,8 @@ class SlimRouter {
      * Returns Slim Framework instance
      * @return App
      */
-    public function getSlimApp() {
+    public function getSlimApp()
+    {
         return $this->slimApp;
     }
 }
